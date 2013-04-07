@@ -205,9 +205,9 @@ MultiCharShortcuts = {
 }
 
 Compilers = {
-    'c': ('clang', 'clang++'),
-    'g': ('gcc', 'g++'),
-    'D': ('', ''),
+    'c': '^CC=clang;^CPP=clang++;',
+    'g': '^CC=gcc;^CPP=g++;',
+    'D': ''
 }
 
 Optimizations = {
@@ -217,10 +217,59 @@ Optimizations = {
 }
 
 Architectures = {
-    '4': '^CPPFLAGS=-m32;',
-    '8': '^CPPFLAGS=-m64;',
-    'X': '^CPPFLAGS=-mx32;',
+    '4': '^CC=-m32;^CPP=-m32;',
+    '8': '^CC=-m64;^CPP=-m64;',
+    'X': '^CC=-mx32;^CPP=-mx32;',
+    'D': '',
 }
+
+def show(env, args):
+    print "Environment:"
+    for k, v in env.items():
+        print '\t%s: %s' % (k, v)
+    print "Arguments:"
+    for arg in args:
+        print '\t%s' % arg
+
+def to_string(env, args):
+    envs = ' '.join(["%s=%s" % (k, v) for k, v in env.items()])
+    return "%s %s" % (envs, ' '.join(args))
+
+def help():
+    print "Compilers:"
+    for k in sorted(Compilers.keys()):
+        parse_flags(Compilers[k])
+        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        reset()
+    print ""
+
+    print "Optimizations:"
+    for k in sorted(Optimizations.keys()):
+        parse_flags(Optimizations[k])
+        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        reset()
+    print ""
+
+    print "Architectures:"
+    for k in sorted(Architectures.keys()):
+        parse_flags(Architectures[k])
+        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        reset()
+    print ""
+
+    print "Multi Char Shortcuts (.)"
+    for k in sorted(MultiCharShortcuts.keys()):
+        parse_flags(MultiCharShortcuts[k])
+        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        reset()
+    print ""
+
+    print "Single Char Shortcuts (*)"
+    for k in sorted(SingleCharShortcuts.keys()):
+        parse_flags(SingleCharShortcuts[k])
+        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        reset()
+    print ""
 
 # Grammar = Compiler & OptimizationLevel & Architecture & Flag*
 #
@@ -249,6 +298,11 @@ import sys
 
 Environment = {}
 Arguments = []
+def reset():
+    global Environment
+    global Arguments
+    Environment = {}
+    Arguments = []
 
 class ParseError(Exception):
     def __init__(self, msg, context):
@@ -263,7 +317,12 @@ def parse_environment(t):
     env, t = t[1:last], t[last+1:]
     if env:
         k, _, v = env.partition('=')
-        Environment[k.strip()] = v.strip()
+        k = k.strip()
+        v = v.strip()
+        if k not in Environment:
+            Environment[k] = v
+        else:
+            Environment[k] = Environment[k] + ' ' + v
     return t
 
 def parse_singlechars(t):
@@ -342,9 +401,7 @@ def parse_compiler(t):
     flag, t = t[0], t[1:]
     if flag not in Compilers:
         raise ParseError('Unrecognized compiler: %s' % flag, t)
-    cc, cpp = Compilers[flag]
-    if cc: Environment['CC'] = cc
-    if cpp: Environment['CPP'] = cpp
+    parse_flags(Compilers[flag])
     return t
 
 def parse_optimization(t):
@@ -362,18 +419,15 @@ def parse_architecture(t):
     return t
 
 def parse(t):
+    if len(t) < 3:
+        raise ParseError('String requires at least a compiler, optimization, and arch flag.', t)
     t = parse_compiler(t)
     t = parse_optimization(t)
     t = parse_architecture(t)
     t = parse_flags(t)
-
-def show():
-    print "Environment:"
-    for k, v in Environment.items():
-        print '\t%s: %s' % (k, v)
-    print "Arguments:"
-    for arg in Arguments:
-        print '\t%s' % arg
+    res = Environment, Arguments
+    reset()
+    return res
 
 def get_opt(short, long, opts):
     for opt, optarg in opts:
@@ -382,7 +436,7 @@ def get_opt(short, long, opts):
     return None
 
 def main():
-    optlist, extra = getopt.gnu_getopt(sys.argv, 'st:', ['show', 'test='])
+    optlist, extra = getopt.gnu_getopt(sys.argv, 'hst:', ['help', 'show', 'test='])
 
     cwd = os.getcwd()
     directory = os.path.basename(cwd)
@@ -393,12 +447,15 @@ def main():
     if t is not None:
         optlist.append(('--show', ''))
         directory = t
+    elif ('--help', '') in optlist or ('-h', '') in optlist:
+        help()
+        return 0
     elif not os.path.exists(configure):
         print "No 'configure' in parent directory!"
         return 1
 
     try:
-        parse(directory)
+        env, args = parse(directory)
     except ParseError, e:
         print str(e)
         if e.context in directory:
@@ -407,11 +464,12 @@ def main():
             print "         %s^" % ('-' * pos)
             return 1
 
+
     if ('--show', '') in optlist or ('-s', '') in optlist:
-        show()
+        show(env, args)
 
     else:
-        os.execve(configure, [configure] + Arguments, Environment)
+        os.execve(configure, [configure] + args, env)
 
 if __name__ == '__main__':
     sys.exit(main())
