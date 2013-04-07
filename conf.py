@@ -238,9 +238,9 @@ Architectures = {
 #    Expand all single char shortcuts with --enable-$REP:
 #       *abcd
 #    Expand all multi char shortcuts recursively:
-#       :name
+#       .name
 
-FlagChars = set(('^', '+', '=', '!', '\'', '*', ':'))
+FlagChars = set(('^', '+', '=', '!', '\'', '*', '.'))
 
 import getopt
 import os
@@ -285,7 +285,7 @@ def consume_to_next_flag(t):
     return t[:offset], t[offset:]
 
 def parse_multichars(t):
-    assert t[0] == ':'
+    assert t[0] == '.'
     name, t = consume_to_next_flag(t)
     if name not in MultiCharShortcuts:
         raise ParseError('Unrecognized multi char shortcut: "%s"' % name, name + t)
@@ -328,7 +328,7 @@ def parse_flags(t):
             raise ParseError("Expected another flag at '%s'" % ty, t)
         if ty == '^': t = parse_environment(t)
         elif ty == '*': t = parse_singlechars(t)
-        elif ty == ':': t = parse_multichars(t)
+        elif ty == '.': t = parse_multichars(t)
         elif ty == '+': t = parse_enable(t)
         elif ty == '=': t = parse_with(t)
         elif ty == '!': t = parse_disable(t)
