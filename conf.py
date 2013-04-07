@@ -367,15 +367,33 @@ def parse(t):
     t = parse_architecture(t)
     t = parse_flags(t)
 
+def show():
+    print "Environment:"
+    for k, v in Environment.items():
+        print '\t%s: %s' % (k, v)
+    print "Arguments:"
+    for arg in Arguments:
+        print '\t%s' % arg
+
+def get_opt(short, long, opts):
+    for opt, optarg in opts:
+        if (opt == long or opt == short) and optarg:
+            return optarg
+    return None
+
 def main():
-    optlist, extra = getopt.gnu_getopt(sys.argv, 's', ['show'])
+    optlist, extra = getopt.gnu_getopt(sys.argv, 'st:', ['show', 'test='])
 
     cwd = os.getcwd()
     directory = os.path.basename(cwd)
     parent = os.path.dirname(cwd)
     configure = os.path.join(parent, 'configure')
 
-    if not os.path.exists(configure):
+    t = get_opt('-t', '--test', optlist)
+    if t is not None:
+        optlist.append(('--show', ''))
+        directory = t
+    elif not os.path.exists(configure):
         print "No 'configure' in parent directory!"
         return 1
 
@@ -390,12 +408,7 @@ def main():
             return 1
 
     if ('--show', '') in optlist or ('-s', '') in optlist:
-        print "Environment:"
-        for k, v in Environment.items():
-            print '\t%s: %s' % (k, v)
-        print "Arguments:"
-        for arg in Arguments:
-            print '\t%s' % arg
+        show()
 
     else:
         os.execve(configure, [configure] + Arguments, Environment)
