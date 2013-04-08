@@ -299,6 +299,8 @@ def main():
     else:
         os.execve(configure, [configure] + args, env)
 
+    return 0
+
 if __name__ == '__main__':
     sys.exit(main())
 
