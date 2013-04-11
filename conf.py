@@ -247,7 +247,7 @@ def parse_architecture(t):
     parse_flags(Architectures[flag])
     return t
 
-def parse(t):
+def parse_toplevel(t):
     if len(t) < 3:
         raise ParseError('String requires at least a compiler, optimization, and arch flag.', t)
     t = parse_compiler(t)
@@ -258,14 +258,107 @@ def parse(t):
     reset()
     return res
 
-def get_opt(short, long, opts):
-    for opt, optarg in opts:
-        if (opt == long or opt == short) and optarg:
-            return optarg
-    return None
+def parse(t):
+    try:
+        return parse_toplevel(t)
+    except ParseError, e:
+        print str(e)
+        if e.context in t:
+            pos = len(t) - len(e.context)
+            print "Context: %s" % t
+            print "         %s^" % ('-' * pos)
+
+def create(target, args):
+    res = parse(target)
+    if not res:
+        return 1
+    if 'show' in args:
+        show(res[0], res[1])
+
+    # Make the directory if it doesn't exist.
+    pwd = os.getcwd()
+    confdir = os.path.realpath(os.path.join(pwd, target))
+    if not os.path.exists(confdir):
+        os.mkdir(confdir)
+
+    # Create the context link, if there is not already one.
+    if not os.path.islink('ctx'):
+        os.symlink(confdir, 'ctx')
+
+    # Change to the directory and build.
+    haveError = None
+    try:
+        os.chdir(confdir)
+
+        pid = os.fork()
+        if not pid:
+            os.execve('../configure', ['../configure'] + res[1], res[0])
+        else:
+            os.waitpid(pid, 0)
+    except Exception, e:
+        haveError = e
+    os.chdir(pwd)
+    if haveError:
+        raise haveError
+
+Options = {
+    'help': ('h', 'help'),
+    'show': ('s', 'show'),
+    'test': ('t:', 'test='),
+    'create': ('c:', 'create='),
+}
+def parse_args():
+    shorts = ''
+    longs = []
+    for k, (s, l) in Options.items():
+        shorts += s
+        longs.append(l)
+    optlist, extra = getopt.gnu_getopt(sys.argv, shorts, longs)
+    out = {}
+    for k, (s, l) in Options.items():
+        for opt, arg in optlist:
+            if '-' + s.strip(':') == opt:
+                out[k] = arg
+            if '--' + l.strip('=') == opt:
+                out[k] = arg
+    return out, extra
 
 def main():
-    optlist, extra = getopt.gnu_getopt(sys.argv, 'hst:', ['help', 'show', 'test='])
+    args, extra = parse_args()
+
+    if 'help' in args:
+        # Print help and exit.
+        help()
+        return 0
+
+    elif 'test' in args:
+        # Show the result of parsing the passed string.
+        res = parse(args['test'])
+        if not res:
+            return 1
+        show(res[0], res[1])
+        return 0
+
+    elif 'create' in args:
+        # Create and configure in the given string.
+        if not args['create']:
+            print "No target specified."
+            return 1
+
+        create(args['create'], args)
+
+    else:
+        # Create from the unadorned arg.
+        if not extra:
+            print "No target specified."
+            return 1
+
+        create(extra[1], args)
+
+    return 0
+
+    """
+    else:
 
     cwd = os.getcwd()
     directory = os.path.basename(cwd)
@@ -283,15 +376,6 @@ def main():
         print "No 'configure' in parent directory!"
         return 1
 
-    try:
-        env, args = parse(directory)
-    except ParseError, e:
-        print str(e)
-        if e.context in directory:
-            pos = len(directory) - len(e.context)
-            print "Context: %s" % directory
-            print "         %s^" % ('-' * pos)
-            return 1
 
     if ('--show', '') in optlist or ('-s', '') in optlist:
         show(env, args)
@@ -300,6 +384,7 @@ def main():
         os.execve(configure, [configure] + args, env)
 
     return 0
+    """
 
 if __name__ == '__main__':
     sys.exit(main())
