@@ -19,23 +19,24 @@ SingleCharShortcuts = {
     'd': '+more-deterministic',
     'O': '+oom-backtrace',
     'X': '+xterm-updates',
-    'r': '+readline',
+    'R': '+readline',
     'c': '+ctypes',
     't': '+threadsafe',
     'n': '=system-nspr',
 }
 
 MultiCharShortcuts = {
-    'def': '*jctrXnC', # We almost always want these.
+    'def': '*jctRXnC', # We almost always want these.
+    'ra': '!optimize+debug!threadsafe*Crvz', # Root analysis build (replaces def).
     'dbg': '*dvz', # Add debugability enhancements.
     'perf': '*s', # forces stripping
     'fuzz': '*dO',
-    'ggc': '*nrx'
+    'ggc': '*nx'
 }
 
 Compilers = {
-    'c': '^CC=clang;^CPP=clang++;',
-    'g': '^CC=gcc;^CPP=g++;',
+    'c': '^CC=clang;^CXX=clang++;^CXXFLAGS=-fcolor-diagnostics;',
+    'g': '^CC=gcc;^CXX=g++;',
     'D': ''
 }
 
@@ -46,9 +47,9 @@ Optimizations = {
 }
 
 Architectures = {
-    '4': '^CC=-m32;^CPP=-m32;',
-    '8': '^CC=-m64;^CPP=-m64;',
-    'X': '^CC=-mx32;^CPP=-mx32;',
+    '4': '^CC=-m32;^CXX=-m32;',
+    '8': '^CC=-m64;^CXX=-m64;',
+    'X': '^CC=-mx32;^CXX=-mx32;',
     'D': '',
 }
 
@@ -107,23 +108,25 @@ def help():
         reset()
     print ""
 
-# Grammar = Compiler & OptimizationLevel & Architecture & Flag*
-#
-#  Flags:
-#    Enable argument with --enable-$TEXT:
-#       +TEXT
-#    Enable argument with --with-$TEXT:
-#       =TEXT
-#    Disable argument with --disable-$TEXT:
-#       !TEXT
-#    Send literal argument $TEXT:
-#       'TEXT;
-#    Environment Variable:
-#       ^FLAG=foo;
-#    Expand all single char shortcuts with --enable-$REP:
-#       *abcd
-#    Expand all multi char shortcuts recursively:
-#       .name
+    print """
+Grammar = Compiler & OptimizationLevel & Architecture & Flag*
+
+  Flags:
+    Enable argument with --enable-$TEXT:
+       +TEXT
+    Enable argument with --with-$TEXT:
+       =TEXT
+    Disable argument with --disable-$TEXT:
+       !TEXT
+    Send literal argument $TEXT:
+       'TEXT;
+    Environment Variable:
+       ^FLAG=foo;
+    Expand all single char shortcuts with --enable-$REP:
+       *abcd
+    Expand all multi char shortcuts recursively:
+       .name
+"""
 
 Environment = {}
 Arguments = []
@@ -292,7 +295,10 @@ def create(target, args):
 
         pid = os.fork()
         if not pid:
-            os.execve('../configure', ['../configure'] + res[1], res[0])
+            env = os.environ.copy()
+            for k, v in res[0]:
+                env[k] = v
+            os.execve('../configure', ['../configure'] + res[1], env)
         else:
             os.waitpid(pid, 0)
     except Exception, e:
