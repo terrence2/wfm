@@ -13,6 +13,8 @@ import os.path
 import subprocess
 import sys
 
+from multiprocessing import cpu_count
+
 @contextlib.contextmanager
 def cd(dirname):
     current = os.getcwd()
@@ -22,26 +24,39 @@ def cd(dirname):
     finally:
         os.chdir(current)
 
+def get_jobcount(specified):
+    if specified > 0:
+        return specified
+
+    cmdname = sys.argv[0].strip('./\\')
+    try:
+        return int(cmdname)
+    except ValueError: pass
+
+    return cpu_count()
+
+
 def main():
     # Process args.
     parser = argparse.ArgumentParser(description='Run make in a directory.')
-    parser.add_argument('builddir', metavar='context', default='ctx', type=str, nargs='?', help='The directory to build in.')
-    parser.add_argument('--jobs', '-j', metavar='count', default=0, type=int, help='Number of parallel builds to run.')
+    parser.add_argument('builddir', metavar='context', default='ctx', type=str, nargs='?',
+                        help='The directory to build in.')
+    parser.add_argument('--jobs', '-j', metavar='count', default=0, type=int,
+                        help='Number of parallel builds to run.')
+    parser.add_argument('--verbose', '-v', metavar='verbose', default=False, type=bool,
+                        help='Show all build output.')
     args, extra = parser.parse_known_args()
-
-    # Get the process count.
-    cnt = args.jobs
-    if not cnt:
-        cmdname = sys.argv[0].strip('./\\')
-        if cmdname.isdigit():
-            cnt = int(cmdname)
-        else:
-            cnt = 1
-    extra += ['-j' + str(cnt)]
 
     if not os.path.isdir(args.builddir):
         print("No directory at builddir: {}".format(args.builddir))
         return 1
+
+    # Get the process count.
+    extra += ['-j' + str(get_jobcount(args.jobs))]
+
+    # Default to silent build.
+    if not args.verbose:
+        extra += ['-s']
 
     with cd(args.builddir):
         p = subprocess.Popen(['make'] + extra)

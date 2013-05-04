@@ -6,7 +6,8 @@ import os.path
 import sys
 
 SingleCharShortcuts = {
-    'C': '\'--with-ccache=/usr/bin/ccache;\'--cache-file=/home/terrence/moz/config.cache;',
+    # \'--cache-file=/home/terrence/moz/config.cache; -- Seems to cache too much, like the CC/CXX environment vars!?!
+    'C': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
     's': '+strip',
     'd': '+debug-symbols',
     'D': '+dmd',
@@ -22,22 +23,24 @@ SingleCharShortcuts = {
     'R': '+readline',
     'c': '+ctypes',
     't': '+threadsafe',
-    'n': '=system-nspr',
+    'N': '=system-nspr',
+    'T': '+trace-malloc',
 }
 
 MultiCharShortcuts = {
-    'def': '*jctRXnC', # We almost always want these.
+    'def': '*jctRXNC', # We almost always want these.
     'ra': '!optimize+debug!threadsafe*Crvz', # Root analysis build (replaces def).
     'dbg': '*dvz', # Add debugability enhancements.
     'perf': '*s', # forces stripping
     'fuzz': '*dO',
-    'ggc': '*nx'
+    'ggc': '*nx',
+    'tbpl': '+signmar+stdcxx-compat!shared-js*tcTNC',
 }
 
 Compilers = {
-    'c': '^CC=clang;^CXX=clang++;^CXXFLAGS=-fcolor-diagnostics;',
+    'c': '^CC=clang;^CXX=clang++;^CCACHE_CC=clang;^CXXFLAGS=-fcolor-diagnostics;',
     'g': '^CC=gcc;^CXX=g++;',
-    'D': ''
+    'P': ''
 }
 
 Optimizations = {
@@ -275,8 +278,10 @@ def create(target, args):
     res = parse(target)
     if not res:
         return 1
+    environment = res[0]
+    confargs = res[1]
     if 'show' in args:
-        show(res[0], res[1])
+        show(environment, confargs)
 
     # Make the directory if it doesn't exist.
     pwd = os.getcwd()
@@ -295,10 +300,10 @@ def create(target, args):
 
         pid = os.fork()
         if not pid:
-            env = os.environ.copy()
-            for k, v in res[0]:
-                env[k] = v
-            os.execve('../configure', ['../configure'] + res[1], env)
+            # Propogate only required fields into the environment.
+            for key in ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD'):
+                if key in os.environ: environment[key] = os.environ[key]
+            os.execve('../configure', ['../configure'] + confargs, environment)
         else:
             os.waitpid(pid, 0)
     except Exception, e:
