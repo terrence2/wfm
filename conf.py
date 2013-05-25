@@ -1,8 +1,8 @@
-#!/usr/bin/python2
-
-import getopt
+#!/usr/bin/python3
+import argparse
 import os
 import os.path
+import subprocess
 import sys
 
 SingleCharShortcuts = {
@@ -28,9 +28,10 @@ SingleCharShortcuts = {
 }
 
 MultiCharShortcuts = {
-    'def': '*jctRXNC', # We almost always want these.
-    'ra': '!optimize+debug!threadsafe*Crvz', # Root analysis build (replaces def).
+    'shell': '*RX', # We almost always want these.
     'dbg': '*dvz', # Add debugability enhancements.
+    'def': '*dvzRX!intl-api', # .dbg.shell
+    'ra': '!optimize+debug!threadsafe*Crvz', # Root analysis build (replaces def).
     'perf': '*s', # forces stripping
     'fuzz': '*dO',
     'ggc': '*nx',
@@ -59,59 +60,68 @@ Architectures = {
 FlagChars = set(('^', '+', '=', '!', '\'', '*', '.'))
 
 def show(env, args):
-    print "Environment:"
+    print("Environment:")
     for k, v in env.items():
-        print '\t%s: %s' % (k, v)
-    print "Arguments:"
+        print('\t%s: %s' % (k, v))
+    print("Arguments:")
     for arg in args:
-        print '\t%s' % arg
+        print('\t%s' % arg)
+
+    short = ""
+    for k, v in env.items():
+        short += '{}="{}"'.format(k, v) + " "
+    short += "./configure"
+    for arg in args:
+        short += " " + arg
+    print('\n')
+    print(short)
 
 def to_string(env, args):
     envs = ' '.join(["%s=%s" % (k, v) for k, v in env.items()])
     return "%s %s" % (envs, ' '.join(args))
 
 def help():
-    print "Showing help for wfm-conf:"
-    print "\t-s/--show      Show selected configure env/args."
-    print "\t-t/--test=DIR  Test the given dirname."
-    print ""
+    print("Showing help for wfm-conf:")
+    print("\t-s/--show      Show selected configure env/args.")
+    print("\t-t/--test=DIR  Test the given dirname.")
+    print("")
 
-    print "Compilers:"
+    print("Compilers:")
     for k in sorted(Compilers.keys()):
         parse_flags(Compilers[k])
-        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        print("\t%s: %s" % (k, to_string(Environment, Arguments)))
         reset()
-    print ""
+    print("")
 
-    print "Optimizations:"
+    print("Optimizations:")
     for k in sorted(Optimizations.keys()):
         parse_flags(Optimizations[k])
-        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        print("\t%s: %s" % (k, to_string(Environment, Arguments)))
         reset()
-    print ""
+    print("")
 
-    print "Architectures:"
+    print("Architectures:")
     for k in sorted(Architectures.keys()):
         parse_flags(Architectures[k])
-        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        print("\t%s: %s" % (k, to_string(Environment, Arguments)))
         reset()
-    print ""
+    print("")
 
-    print "Multi Char Shortcuts (.)"
+    print("Multi Char Shortcuts (.)")
     for k in sorted(MultiCharShortcuts.keys()):
         parse_flags(MultiCharShortcuts[k])
-        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        print("\t%s: %s" % (k, to_string(Environment, Arguments)))
         reset()
-    print ""
+    print("")
 
-    print "Single Char Shortcuts (*)"
+    print("Single Char Shortcuts (*)")
     for k in sorted(SingleCharShortcuts.keys()):
         parse_flags(SingleCharShortcuts[k])
-        print "\t%s: %s" % (k, to_string(Environment, Arguments))
+        print("\t%s: %s" % (k, to_string(Environment, Arguments)))
         reset()
-    print ""
+    print("")
 
-    print """
+    print("""
 Grammar = Compiler & OptimizationLevel & Architecture & Flag*
 
   Flags:
@@ -129,7 +139,7 @@ Grammar = Compiler & OptimizationLevel & Architecture & Flag*
        *abcd
     Expand all multi char shortcuts recursively:
        .name
-"""
+""")
 
 Environment = {}
 Arguments = []
@@ -267,21 +277,19 @@ def parse_toplevel(t):
 def parse(t):
     try:
         return parse_toplevel(t)
-    except ParseError, e:
-        print str(e)
+    except ParseError as e:
+        print(str(e))
         if e.context in t:
             pos = len(t) - len(e.context)
-            print "Context: %s" % t
-            print "         %s^" % ('-' * pos)
+            print("Context: %s" % t)
+            print("         %s^" % ('-' * pos))
 
-def create(target, args):
+def create(target):
     res = parse(target)
     if not res:
         return 1
     environment = res[0]
     confargs = res[1]
-    if 'show' in args:
-        show(environment, confargs)
 
     # Make the directory if it doesn't exist.
     pwd = os.getcwd()
@@ -293,109 +301,43 @@ def create(target, args):
     if not os.path.islink('ctx'):
         os.symlink(confdir, 'ctx')
 
-    # Change to the directory and build.
-    haveError = None
-    try:
-        os.chdir(confdir)
+    # If configure exists in the current directly, run autoconf to make sure it
+    # is up to date before we configure.
+    if os.path.isfile('configure.in'):
+        subprocess.call(['autoconf-2.13'])
 
-        pid = os.fork()
-        if not pid:
-            # Propogate only required fields into the environment.
-            for key in ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD'):
-                if key in os.environ: environment[key] = os.environ[key]
-            os.execve('../configure', ['../configure'] + confargs, environment)
-        else:
-            os.waitpid(pid, 0)
-    except Exception, e:
-        haveError = e
-    os.chdir(pwd)
-    if haveError:
-        raise haveError
-
-Options = {
-    'help': ('h', 'help'),
-    'show': ('s', 'show'),
-    'test': ('t:', 'test='),
-    'create': ('c:', 'create='),
-}
-def parse_args():
-    shorts = ''
-    longs = []
-    for k, (s, l) in Options.items():
-        shorts += s
-        longs.append(l)
-    optlist, extra = getopt.gnu_getopt(sys.argv, shorts, longs)
-    out = {}
-    for k, (s, l) in Options.items():
-        for opt, arg in optlist:
-            if '-' + s.strip(':') == opt:
-                out[k] = arg
-            if '--' + l.strip('=') == opt:
-                out[k] = arg
-    return out, extra
+    # Run configure.
+    inherited = ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD')
+    env = {k: os.environ[k] for k in inherited if k in os.environ}
+    conf = subprocess.Popen(['../configure'] + confargs, env=env, cwd=confdir)
+    conf.wait()
 
 def main():
-    args, extra = parse_args()
+    parser = argparse.ArgumentParser(description='Configure SpiderMonkey.')
+    parser.add_argument('-s', '--show', action='store_true',
+                        help="Print the behavior of the current ctx.")
+    parser.add_argument('-t', '--test', metavar='CONFIG',
+                        help="Print the behavior of the given directory.")
+    parser.add_argument('builddir', metavar='CONTEXT', default='ctx', type=str,
+                        nargs='?', help='The configuration to use.')
+    args, extra = parser.parse_known_args()
 
-    if 'help' in args:
-        # Print help and exit.
-        help()
-        return 0
+    if args.show:
+        args.test = os.path.basename(os.readlink('ctx'))
 
-    elif 'test' in args:
+    if args.test:
         # Show the result of parsing the passed string.
-        res = parse(args['test'])
+        res = parse(args.test)
         if not res:
             return 1
         show(res[0], res[1])
         return 0
 
-    elif 'create' in args:
-        # Create and configure in the given string.
-        if not args['create']:
-            print "No target specified."
-            return 1
-
-        create(args['create'], args)
-
-    else:
-        # Create from the unadorned arg.
-        if not extra:
-            print "No target specified."
-            return 1
-
-        create(extra[1], args)
+    if args.builddir == 'ctx':
+        args.builddir = os.path.basename(os.readlink('ctx'))
+    create(args.builddir)
 
     return 0
-
-    """
-    else:
-
-    cwd = os.getcwd()
-    directory = os.path.basename(cwd)
-    parent = os.path.dirname(cwd)
-    configure = os.path.join(parent, 'configure')
-
-    t = get_opt('-t', '--test', optlist)
-    if t is not None:
-        optlist.append(('--show', ''))
-        directory = t
-    elif ('--help', '') in optlist or ('-h', '') in optlist:
-        help()
-        return 0
-    elif not os.path.exists(configure):
-        print "No 'configure' in parent directory!"
-        return 1
-
-
-    if ('--show', '') in optlist or ('-s', '') in optlist:
-        show(env, args)
-
-    else:
-        os.execve(configure, [configure] + args, env)
-
-    return 0
-    """
 
 if __name__ == '__main__':
     sys.exit(main())

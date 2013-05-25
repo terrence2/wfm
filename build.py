@@ -15,23 +15,15 @@ import sys
 
 from multiprocessing import cpu_count
 
-@contextlib.contextmanager
-def cd(dirname):
-    current = os.getcwd()
-    os.chdir(dirname)
-    try:
-        yield
-    finally:
-        os.chdir(current)
-
 def get_jobcount(specified):
     if specified > 0:
         return specified
 
-    cmdname = sys.argv[0].strip('./\\')
+    cmdname = os.path.basename(sys.argv[0]).strip('./\\')
     try:
         return int(cmdname)
-    except ValueError: pass
+    except ValueError:
+        pass
 
     return cpu_count()
 
@@ -39,7 +31,7 @@ def get_jobcount(specified):
 def main():
     # Process args.
     parser = argparse.ArgumentParser(description='Run make in a directory.')
-    parser.add_argument('builddir', metavar='context', default='ctx', type=str, nargs='?',
+    parser.add_argument('builddir', metavar='CONTEXT', default='ctx', type=str, nargs='?',
                         help='The directory to build in.')
     parser.add_argument('--jobs', '-j', metavar='count', default=0, type=int,
                         help='Number of parallel builds to run.')
@@ -58,9 +50,8 @@ def main():
     if not args.verbose:
         extra += ['-s']
 
-    with cd(args.builddir):
-        p = subprocess.Popen(['make'] + extra)
-        p.communicate(4096)
+    p = subprocess.Popen(['make'] + extra, cwd=args.builddir)
+    p.wait()
 
     return 0
 
