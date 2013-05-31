@@ -31,11 +31,12 @@ MultiCharShortcuts = {
     'shell': '*RX', # We almost always want these.
     'dbg': '*dvz', # Add debugability enhancements.
     'def': '*dvzRX!intl-api', # .dbg.shell
-    'ra': '!optimize+debug!threadsafe*Crvz', # Root analysis build (replaces def).
+    'ra': '!optimize+debug!threadsafe*rzv', # Root analysis build (replaces def).
     'perf': '*s', # forces stripping
     'fuzz': '*dO',
     'ggc': '*nx',
     'tbpl': '+signmar+stdcxx-compat!shared-js*tcTNC',
+    'tbpl4': '+signmar+stdcxx-compat!shared-js*tTC\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
 }
 
 Compilers = {
@@ -51,7 +52,7 @@ Optimizations = {
 }
 
 Architectures = {
-    '4': '^CC=-m32;^CXX=-m32;',
+    '4': '^CC=-m32;^CXX=-m32;\'--target=i686-linux-gnu;',
     '8': '^CC=-m64;^CXX=-m64;',
     'X': '^CC=-mx32;^CXX=-mx32;',
     'D': '',
@@ -80,7 +81,7 @@ def to_string(env, args):
     envs = ' '.join(["%s=%s" % (k, v) for k, v in env.items()])
     return "%s %s" % (envs, ' '.join(args))
 
-def help():
+def help_syntax():
     print("Showing help for wfm-conf:")
     print("\t-s/--show      Show selected configure env/args.")
     print("\t-t/--test=DIR  Test the given dirname.")
@@ -318,9 +319,15 @@ def main():
                         help="Print the behavior of the current ctx.")
     parser.add_argument('-t', '--test', metavar='CONFIG',
                         help="Print the behavior of the given directory.")
+    parser.add_argument('--syntax', action="store_true",
+                        help="Help with the syntax.")
     parser.add_argument('builddir', metavar='CONTEXT', default='ctx', type=str,
                         nargs='?', help='The configuration to use.')
     args, extra = parser.parse_known_args()
+
+    if args.syntax:
+        help_syntax()
+        return 0
 
     if args.show:
         args.test = os.path.basename(os.readlink('ctx'))
