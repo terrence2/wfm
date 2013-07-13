@@ -10,14 +10,13 @@ SingleCharShortcuts = {
     'C': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
     's': '+strip',
     'd': '+debug-symbols',
-    'D': '+dmd',
     'j': '+jemalloc',
     'n': '+gcgenerational',
     'r': '+root-analysis',
     'x': '+exact-rooting',
     'v': '+valgrind',
     'z': '+gczeal',
-    'd': '+more-deterministic',
+    'D': '+more-deterministic',
     'O': '+oom-backtrace',
     'X': '+xterm-updates',
     'R': '+readline',
@@ -33,7 +32,7 @@ MultiCharShortcuts = {
     'def': '*dvzRX!intl-api', # .dbg.shell
     'ra': '!optimize+debug!threadsafe*rzv', # Root analysis build (replaces def).
     'perf': '*s', # forces stripping
-    'fuzz': '*dO',
+    'fuzz': '*DO',
     'ggc': '*nx',
     'tbpl': '+signmar+stdcxx-compat!shared-js*tcTNC',
     'tbpl4': '+signmar+stdcxx-compat!shared-js*tTC\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
