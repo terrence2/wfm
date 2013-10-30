@@ -10,9 +10,8 @@ import sys
 import lib
 
 def main():
-    parser = lib.setup_build_api('Run |make clean|.')
-    args, extra = parser.parse_known_args()
-    p = subprocess.Popen(['make'] + extra, cwd=args.builddir)
+    args, extra = lib.setup_build_api('Run |make clean|.')
+    p = subprocess.Popen(['make', 'clean'] + extra, cwd=args.builddir)
     p.wait()
     return 0
 

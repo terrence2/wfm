@@ -5,6 +5,7 @@ import os.path
 import subprocess
 import sys
 
+
 SingleCharShortcuts = {
     # \'--cache-file=/home/terrence/moz/config.cache; -- Seems to cache too much, like the CC/CXX environment vars!?!
     'C': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
@@ -18,30 +19,51 @@ SingleCharShortcuts = {
     'z': '+gczeal',
     'D': '+more-deterministic',
     'O': '+oom-backtrace',
-    'X': '+xterm-updates',
-    'R': '+readline',
     'c': '+ctypes',
     't': '+threadsafe',
     'N': '=system-nspr',
-    'T': '+trace-malloc',
 }
 
 MultiCharShortcuts = {
-    'shell': '*RX', # We almost always want these.
-    'dbg': '*dvz', # Add debugability enhancements.
-    'def': '*dvzRX!intl-api', # .dbg.shell
-    'ra': '!optimize+debug!threadsafe*rzv', # Root analysis build (replaces def).
+    'shell': '+readline+xterm-updates',
+    'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
+    'dbg': '+debug-symbols+valgrind+gczeal',
+    'def': '.dbg.shell\?intl-api', # .dbg.shell
+    'ra': '!threadsafe*rz', # Root analysis build (replaces def).
     'perf': '*s', # forces stripping
-    'fuzz': '*DO',
-    'ggc': '*nx',
-    'tbpl': '+signmar+stdcxx-compat!shared-js*tcTNC',
-    'tbpl4': '+signmar+stdcxx-compat!shared-js*tTC\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
+    'fuzz': '.dbg+more-deterministic+methodjit+type-inference+profiling',
+    'ggc': '+exact-rooting+gcgenerational',
+    'tbpl': '+signmar+stdcxx-compat+ctypes+trace-malloc.ccache!shared-js=system-nspr?intl-api',
+    'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc*tC\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
 }
 
 Compilers = {
-    'c': '^CC=clang;^CXX=clang++;^CCACHE_CC=clang;^CXXFLAGS=-fcolor-diagnostics;',
-    'g': '^CC=gcc;^CXX=g++;',
-    'P': ''
+    'c': {
+            'name': 'Clang',
+            'flags': '^CC=clang;^CXX=clang++;^CCACHE_CC=clang;^CXXFLAGS=-fcolor-diagnostics;',
+            'architectures': {
+                'd': '',
+                '4': '^CC=-arch i386;^CXX=-arch i386;\'--target=i686-linux-gnu;',
+            }
+         },
+    'g': {
+            'name': 'GCC',
+            'flags': '^CC=gcc;^CXX=g++;',
+            'architectures': {
+                'd': '',
+                '4': '^CC=-m32;^CXX=-m32;\'--target=i686-linux-gnu;',
+                '8': '^CC=-m64;^CXX=-m64;',
+                'X': '^CC=-mx32;^CXX=-mx32;',
+                'a': '^CC=-m32;^CXX=-m32;\'--target=arm-linux-gnuabi;',
+            }
+         },
+    'd': {
+            'name': 'Default',
+            'flags': '^CC=clang;^CXX=clang++;^CCACHE_CC=clang;^CXXFLAGS=-fcolor-diagnostics;',
+            'architectures': {
+                'd': '',
+            }
+         },
 }
 
 Optimizations = {
@@ -50,14 +72,7 @@ Optimizations = {
     'D': '+optimize+debug',
 }
 
-Architectures = {
-    '4': '^CC=-m32;^CXX=-m32;\'--target=i686-linux-gnu;',
-    '8': '^CC=-m64;^CXX=-m64;',
-    'X': '^CC=-mx32;^CXX=-mx32;',
-    'D': '',
-}
-
-FlagChars = set(('^', '+', '=', '!', '\'', '*', '.'))
+FlagChars = set(('^', '+', '=', '!', '?', '\'', '*', '.', '%'))
 
 def show(env, args):
     print("Environment:")
@@ -88,7 +103,7 @@ def help_syntax():
 
     print("Compilers:")
     for k in sorted(Compilers.keys()):
-        parse_flags(Compilers[k])
+        parse_flags(Compilers[k]['flags'])
         print("\t%s: %s" % (k, to_string(Environment, Arguments)))
         reset()
     print("")
@@ -96,13 +111,6 @@ def help_syntax():
     print("Optimizations:")
     for k in sorted(Optimizations.keys()):
         parse_flags(Optimizations[k])
-        print("\t%s: %s" % (k, to_string(Environment, Arguments)))
-        reset()
-    print("")
-
-    print("Architectures:")
-    for k in sorted(Architectures.keys()):
-        parse_flags(Architectures[k])
         print("\t%s: %s" % (k, to_string(Environment, Arguments)))
         reset()
     print("")
@@ -139,6 +147,8 @@ Grammar = Compiler & OptimizationLevel & Architecture & Flag*
        *abcd
     Expand all multi char shortcuts recursively:
        .name
+    Add a comment to the end allow multiple builds with one config:
+       %foobar
 """)
 
 Environment = {}
@@ -214,6 +224,12 @@ def parse_disable(t):
     Arguments.append('--disable-' + arg)
     return t
 
+def parse_without(t):
+    assert t[0] == '?'
+    arg, t = consume_to_next_flag(t)
+    Arguments.append('--without-' + arg)
+    return t
+
 def parse_literal(t):
     assert t[0] == '\''
     last = t.find(';')
@@ -236,39 +252,34 @@ def parse_flags(t):
         elif ty == '+': t = parse_enable(t)
         elif ty == '=': t = parse_with(t)
         elif ty == '!': t = parse_disable(t)
+        elif ty == '?': t = parse_without(t)
         elif ty == '\'': t = parse_literal(t)
+        elif ty == '%': t = ''
         else: raise ParseError('Unrecognized flag type: %s' % ty, t)
         assert prior_len != len(t)
         prior_len = len(t)
     return ''
 
-def parse_compiler(t):
-    flag, t = t[0], t[1:]
-    if flag not in Compilers:
-        raise ParseError('Unrecognized compiler: %s' % flag, t)
-    parse_flags(Compilers[flag])
-    return t
+def parse_compiler(compiler, arch, t):
+    if compiler not in Compilers:
+        raise ParseError('Unrecognized compiler: %s' % compiler, t)
+    if arch not in Compilers[compiler]['architectures']:
+        raise ParseError('Unrecognized architecture: %s' % arch, t)
+    parse_flags(Compilers[compiler]['flags'])
+    parse_flags(Compilers[compiler]['architectures'][arch])
 
-def parse_optimization(t):
-    flag, t = t[0], t[1:]
+def parse_optimization(flag, t):
     if flag not in Optimizations:
         raise ParseError('Unrecognized optimization level: %s' % flag, t)
     parse_flags(Optimizations[flag])
-    return t
-
-def parse_architecture(t):
-    flag, t = t[0], t[1:]
-    if flag not in Architectures:
-        raise ParseError('Unrecognized architecture: %s' % flag, t)
-    parse_flags(Architectures[flag])
-    return t
 
 def parse_toplevel(t):
     if len(t) < 3:
         raise ParseError('String requires at least a compiler, optimization, and arch flag.', t)
-    t = parse_compiler(t)
-    t = parse_optimization(t)
-    t = parse_architecture(t)
+    compiler, architecture, optimization = t[0], t[1], t[2]
+    parse_compiler(compiler, architecture, t)
+    parse_optimization(optimization, t)
+    t = t[3:]
     t = parse_flags(t)
     res = Environment, Arguments
     reset()
@@ -284,7 +295,7 @@ def parse(t):
             print("Context: %s" % t)
             print("         %s^" % ('-' * pos))
 
-def create(target):
+def create(target, args):
     res = parse(target)
     if not res:
         return 1
@@ -296,6 +307,11 @@ def create(target):
     confdir = os.path.realpath(os.path.join(pwd, target))
     if not os.path.exists(confdir):
         os.mkdir(confdir)
+
+    # If want to force this build to default, remove the ctx link so we will
+    # recreate it automatically.
+    if args.default and os.path.exists('ctx'):
+        os.unlink('ctx')
 
     # Create the context link, if there is not already one.
     if not os.path.islink('ctx'):
@@ -309,6 +325,7 @@ def create(target):
     # Run configure.
     inherited = ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD')
     env = {k: os.environ[k] for k in inherited if k in os.environ}
+    env.update(environment)
     conf = subprocess.Popen(['../configure'] + confargs, env=env, cwd=confdir)
     conf.wait()
 
@@ -320,6 +337,14 @@ def main():
                         help="Print the behavior of the given directory.")
     parser.add_argument('--syntax', action="store_true",
                         help="Help with the syntax.")
+    #parser.add_argument('-C', '--clobber', action="store_true",
+    #                    help="Clobber before configuring.")
+    parser.add_argument('-d', '--default', action="store_true",
+                        help="Update ctx to this build.")
+    parser.add_argument('-b', '--build', action="store_true",
+                        help="Build after configuring.")
+    parser.add_argument('--diff', default="", type=str,
+                        help="Compare the string agaist the current build.")
     parser.add_argument('builddir', metavar='CONTEXT', default='ctx', type=str,
                         nargs='?', help='The configuration to use.')
     args, extra = parser.parse_known_args()
@@ -328,20 +353,39 @@ def main():
         help_syntax()
         return 0
 
+    # Handle --show and --test.
     if args.show:
         args.test = os.path.basename(os.readlink('ctx'))
-
     if args.test:
-        # Show the result of parsing the passed string.
         res = parse(args.test)
         if not res:
             return 1
         show(res[0], res[1])
         return 0
 
-    if args.builddir == 'ctx':
-        args.builddir = os.path.basename(os.readlink('ctx'))
-    create(args.builddir)
+    # Find the target.
+    target = args.builddir
+    if target == 'ctx':
+        target = os.path.basename(os.readlink('ctx'))
+
+
+    #
+    if args.diff:
+        diffargs = [a for a in args.diff.split() if a]
+        res = parse(target)
+        if not res:
+            return 1
+        confargs = res[1]
+        print("Extra args in config not in string:")
+        print(set(confargs) - set(diffargs))
+        print("Args in string that are missing from config:")
+        print(set(diffargs) - set(confargs))
+        return
+
+    create(target, args)
+
+    if args.build:
+        subprocess.call(['build', args.builddir])
 
     return 0
 
