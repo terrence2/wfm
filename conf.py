@@ -25,16 +25,16 @@ SingleCharShortcuts = {
 }
 
 MultiCharShortcuts = {
+    'tbpl': '+signmar+stdcxx-compat+ctypes+trace-malloc.ccache!shared-js=system-nspr',
+    'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc*tC\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
     'shell': '+readline+xterm-updates',
     'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
     'dbg': '+debug-symbols+valgrind+gczeal',
-    'def': '.dbg.shell\?intl-api', # .dbg.shell
+    'def': '.dbg.shell', # .dbg.shell
     'ra': '!threadsafe*rz', # Root analysis build (replaces def).
     'perf': '*s', # forces stripping
     'fuzz': '.dbg+more-deterministic+methodjit+type-inference+profiling',
     'ggc': '+exact-rooting+gcgenerational',
-    'tbpl': '+signmar+stdcxx-compat+ctypes+trace-malloc.ccache!shared-js=system-nspr?intl-api',
-    'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc*tC\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
 }
 
 Compilers = {
@@ -72,7 +72,7 @@ Optimizations = {
     'D': '+optimize+debug',
 }
 
-FlagChars = set(('^', '+', '=', '!', '?', '\'', '*', '.', '%'))
+FlagChars = set(('^', '+', '=', '!', '?', '\'', '*', '.', '@'))
 
 def show(env, args):
     print("Environment:")
@@ -254,7 +254,7 @@ def parse_flags(t):
         elif ty == '!': t = parse_disable(t)
         elif ty == '?': t = parse_without(t)
         elif ty == '\'': t = parse_literal(t)
-        elif ty == '%': t = ''
+        elif ty == '@': t = ''
         else: raise ParseError('Unrecognized flag type: %s' % ty, t)
         assert prior_len != len(t)
         prior_len = len(t)
