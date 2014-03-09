@@ -20,12 +20,15 @@ SingleCharShortcuts = {
     'D': '+more-deterministic',
     'O': '+oom-backtrace',
     'c': '+ctypes',
+    'z': '!ctypes',
     't': '+threadsafe',
     'N': '=system-nspr',
+    'T': '+posix-nspr-emulation',
+    'i': '?intl-api',
 }
 
 MultiCharShortcuts = {
-    'tbpl': '+signmar+stdcxx-compat+ctypes+trace-malloc.ccache!shared-js=system-nspr',
+    'tbpl': '+signmar+stdcxx-compat!ctypes+trace-malloc.ccache!shared-js+posix-nspr-emulation',
     'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc*tC\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
     'shell': '+readline+xterm-updates',
     'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
@@ -43,7 +46,7 @@ Compilers = {
             'flags': '^CC=clang;^CXX=clang++;^CCACHE_CC=clang;^CXXFLAGS=-fcolor-diagnostics;',
             'architectures': {
                 'd': '',
-                '4': '^CC=-arch i386;^CXX=-arch i386;\'--target=i686-linux-gnu;',
+                '4': '^AR=ar;^CC=-arch i386;^CXX=-arch i386;\'--target=i686-linux-gnu;',
             }
          },
     'g': {
@@ -51,10 +54,11 @@ Compilers = {
             'flags': '^CC=gcc;^CXX=g++;',
             'architectures': {
                 'd': '',
-                '4': '^CC=-m32;^CXX=-m32;\'--target=i686-linux-gnu;',
+                '4': '^AR=ar;^CC=-m32;^CXX=-m32;\'--target=i686-linux-gnu;',
                 '8': '^CC=-m64;^CXX=-m64;',
                 'X': '^CC=-mx32;^CXX=-mx32;',
                 'a': '^CC=-m32;^CXX=-m32;\'--target=arm-linux-gnuabi;',
+                'A': '^AR=ar;^CC=-m32;^CXX=-m32;\'--target=i686-linux-gnu;!ctypes+arm-simulator',
             }
          },
     'd': {
