@@ -21,33 +21,18 @@ class ParseError(Exception):
         Exception.__init__(self, msg)
         self.context = context
 
+# Find ccache.
+try:
+    CCachePath = subprocess.check_output(['which', 'ccache']).decode('UTF-8').strip()
+except subprocess.CalledProcessError:
+    raise # We'll probably need to hardcode for windows.
 
 class ConfigParser:
-    SingleCharShortcuts = {
-        # \'--cache-file=/home/terrence/moz/config.cache; -- Seems to cache too much, like the CC/CXX environment vars!?!
-        'C': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
-        's': '+strip',
-        'd': '+debug-symbols',
-        'j': '+jemalloc',
-        'n': '+gcgenerational',
-        'x': '+exact-rooting',
-        'v': '+valgrind',
-        'z': '+gczeal',
-        'D': '+more-deterministic',
-        'O': '+oom-backtrace',
-        'c': '+ctypes',
-        'z': '!ctypes',
-        't': '+threadsafe',
-        'N': '=system-nspr',
-        'T': '+posix-nspr-emulation',
-        'i': '?intl-api',
-    }
-
     MultiCharShortcuts = {
         'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache',
         'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
         'shell': '+readline+xterm-updates+posix-nspr-emulation',
-        'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
+        'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=' + CCachePath + ';',
         'dbg': '+debug-symbols+valgrind+gczeal',
         'def': '.dbg.shell', # .dbg.shell
         'perf': '+strip', # forces stripping
@@ -93,7 +78,7 @@ class ConfigParser:
         'D': '+optimize+debug',
     }
 
-    FlagChars = set(('^', '+', '=', '!', '?', '\'', '*', '.', '@'))
+    FlagChars = set(('^', '+', '=', '!', '?', '\'', '.', '@')) # '*' is available
 
     def __init__(self, target):
         assert '/' not in target
@@ -117,16 +102,6 @@ class ConfigParser:
                 self.environment[k] = v
             else:
                 self.environment[k] = self.environment[k] + ' ' + v
-        return t
-
-    def parse_singlechars(self, t):
-        assert t[0] == '*'
-        t = t[1:]
-        while t and t[0] not in self.FlagChars:
-            char, t = t[0], t[1:]
-            if char not in self.SingleCharShortcuts:
-                raise ParseError('Unrecognized single char shortcut: "%s"' % char, t)
-            self.parse_flags(self.SingleCharShortcuts[char])
         return t
 
     def consume_to_next_flag(self, t):
@@ -186,7 +161,6 @@ class ConfigParser:
             if ty not in self.FlagChars:
                 raise ParseError("Expected another flag at '%s'" % ty, t)
             if ty == '^': t = self.parse_environment(t)
-            elif ty == '*': t = self.parse_singlechars(t)
             elif ty == '.': t = self.parse_multichars(t)
             elif ty == '+': t = self.parse_enable(t)
             elif ty == '=': t = self.parse_with(t)
