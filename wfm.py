@@ -30,7 +30,6 @@ class ConfigParser:
         'd': '+debug-symbols',
         'j': '+jemalloc',
         'n': '+gcgenerational',
-        'r': '+root-analysis',
         'x': '+exact-rooting',
         'v': '+valgrind',
         'z': '+gczeal',
@@ -45,18 +44,17 @@ class ConfigParser:
     }
 
     MultiCharShortcuts = {
-        'tbpl': '+signmar+stdcxx-compat!ctypes+trace-malloc.ccache!shared-js+posix-nspr-emulation',
-        'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc*tC\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
-        'shell': '+readline+xterm-updates',
+        'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache',
+        'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
+        'shell': '+readline+xterm-updates+posix-nspr-emulation',
         'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=/usr/bin/ccache;',
         'dbg': '+debug-symbols+valgrind+gczeal',
         'def': '.dbg.shell', # .dbg.shell
-        'ra': '!threadsafe*rz', # Root analysis build (replaces def).
-        'perf': '*s', # forces stripping
+        'perf': '+strip', # forces stripping
         'fuzz': '.dbg+more-deterministic+methodjit+type-inference+profiling',
         'ggc': '+exact-rooting+gcgenerational',
         'noggc': '!gcgenerational',
-        'i': '?intl-api',
+        'fast': '?intl-api!ctypes',
     }
 
     Compilers = {
