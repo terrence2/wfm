@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 """
 Configure or build in the directory specified, or the one currently linked as ./ctx.
 
@@ -55,6 +55,8 @@ class ConfigParser:
         'perf': '*s', # forces stripping
         'fuzz': '.dbg+more-deterministic+methodjit+type-inference+profiling',
         'ggc': '+exact-rooting+gcgenerational',
+        'noggc': '!gcgenerational',
+        'i': '?intl-api',
     }
 
     Compilers = {
@@ -255,7 +257,7 @@ class ConfigParser:
         print(short)
 
 
-def needs_autoconf(args):
+def needs_autoconf():
     if not os.path.exists('configure'):
         print("No configure, rerunning autoconf.")
         return True
@@ -267,42 +269,12 @@ def needs_autoconf(args):
     return False
 
 
-def autoconf(args):
+def autoconf():
     subprocess.call(['autoconf-2.13'])
 
 
-def configure(args):
-    target = args.builddir
-
-    cfg = ConfigParser(target)
-    cfg.parse()
-
-    # Make the directory if it doesn't exist.
-    pwd = os.getcwd()
-    confdir = os.path.realpath(os.path.join(pwd, target))
-    if not os.path.exists(confdir):
-        os.mkdir(confdir)
-
-    # If want to force this build to default, remove the ctx link so we will
-    # recreate it automatically.
-    if args.default and os.path.exists('ctx'):
-        os.unlink('ctx')
-
-    # Create the context link, if there is not already one.
-    if not os.path.islink('ctx'):
-        os.symlink(confdir, 'ctx')
-
-
-    # Run configure.
-    inherited = ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD')
-    env = {k: os.environ[k] for k in inherited if k in os.environ}
-    env.update(cfg.environment)
-    conf = subprocess.Popen(['../configure'] + cfg.arguments, env=env, cwd=confdir)
-    conf.wait()
-
-
-def needs_configure(args):
-    confstatus = os.path.join(args.builddir, 'config.status')
+def needs_configure(builddir):
+    confstatus = os.path.join(builddir, 'config.status')
 
     if not os.path.exists(confstatus):
         print("no config.status")
@@ -315,26 +287,80 @@ def needs_configure(args):
     return False
 
 
-def build(args, extra):
+def configure(builddir, is_default):
+    cfg = ConfigParser(builddir)
+    cfg.parse()
+
+    # Make the directory if it doesn't exist.
+    pwd = os.getcwd()
+    confdir = os.path.realpath(os.path.join(pwd, builddir))
+    if not os.path.exists(confdir):
+        os.mkdir(confdir)
+
+    # If want to force this build to default, remove the ctx link so we will
+    # recreate it automatically.
+    if is_default and os.path.exists('ctx'):
+        os.unlink('ctx')
+
+    # Create the context link, if there is not already one.
+    if not os.path.islink('ctx'):
+        os.symlink(confdir, 'ctx')
+
+
+    # Run configure.
+    inherited = ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD')
+    env = {k: os.environ[k] for k in inherited if k in os.environ}
+    env.update(cfg.environment)
+    subprocess.check_call(['../configure'] + cfg.arguments, env=env, cwd=confdir)
+
+
+def build(builddir, is_verbose, n_jobs, extra):
     # Check for build-dir.
-    if not os.path.isdir(args.builddir):
-        raise Exception("No directory at builddir: {}".format(args.builddir))
+    if not os.path.isdir(builddir):
+        raise Exception("No directory at builddir: {}".format(builddir))
 
     # Get the process count.
-    extra += ['-j' + str(lib.get_jobcount(args.jobs))]
+    extra += ['-j' + str(lib.get_jobcount(n_jobs))]
 
     # Default to silent build.
-    if not args.verbose:
+    if not is_verbose:
         extra += ['-s']
 
-    subprocess.call(['make'] + extra, cwd=args.builddir)
+    subprocess.check_call(['make'] + extra, cwd=builddir)
+
+
+def check_style(builddir):
+    subprocess.check_call(['make', 'check-style'], cwd=builddir)
+
+
+def jsapi_tests(builddir):
+    path = os.path.join(builddir, 'js', 'src', 'jsapi-tests', 'jsapi-tests')
+    subprocess.check_call([path])
+
+
+def jit_tests(builddir):
+    testsuite = os.path.join('jit-test', 'jit_test.py')
+    binary = os.path.join(builddir, 'js', 'src', 'js')
+    subprocess.check_call([testsuite, binary, '--tbpl'])
+
+
+def js_tests(builddir):
+    testsuite = os.path.join('tests', 'jstests.py')
+    binary = os.path.join(builddir, 'js', 'src', 'js')
+    subprocess.check_call([testsuite, binary, '--tbpl'])
+
+
+def banner(content):
+    print("+-------------------------------------------------------------------------------")
+    print("+-- {} {}+".format(content, '-' * (80 - 5 - len(content))))
+    print("+-------------------------------------------------------------------------------")
 
 
 def main():
     # Process args.
     parser = argparse.ArgumentParser(description='Make a shell.')
-    parser.add_argument('builddir', metavar='CONTEXT', default='ctx', type=str, nargs='?',
-                        help='The directory to build.')
+    parser.add_argument('builddirs', metavar='CONTEXT', default='ctx', type=str, nargs='*',
+                        help='The directory(s) to build.')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Show all build output.')
     parser.add_argument('--default', '-d', action='store_true',
@@ -345,12 +371,21 @@ def main():
                         help="Print the behavior of the given directory.")
     parser.add_argument('--jobs', '-j', metavar='count', default=0, type=int,
                         help='Number of parallel builds to run.')
+    parser.add_argument('--check-style', '-S', action='store_true',
+                        help='Run the check-style target.')
+    parser.add_argument('--jsapi-tests', '-C', action='store_true',
+                        help='Run the jsapi-tests suite.')
+    parser.add_argument('--jit-tests', '-J', action='store_true',
+                        help='Run the jit-tests suite.')
+    parser.add_argument('--js-tests', '-T', action='store_true',
+                        help='Run the js-tests suite.')
+    parser.add_argument('--all-tests', '-A', default=False, type=bool,
+                        help='Run all tests.')
     args, extra = parser.parse_known_args()
 
-    # Post-process args.
-    if args.builddir == 'ctx':
-        args.builddir = os.path.basename(os.readlink('ctx'))
-    args.builddir = args.builddir.strip('/')
+    # Propogate all_tests to individual test routines.
+    if args.all_tests:
+        args.check_style = args.jsapi_tests = args.jit_tests = args.js_tests = True
 
     # Handle --show and --test.
     if args.show:
@@ -369,15 +404,46 @@ def main():
         return 0
 
     # Autoconf if needed.
-    if needs_autoconf(args):
-        autoconf(args)
+    if needs_autoconf():
+        autoconf()
 
-    # Configure if needed.
-    if needs_configure(args):
-        configure(args)
+    # Configure and build each directory in order.
+    for builddir in args.builddirs:
+        builddir = builddir.strip('/')
+        if builddir == 'ctx':
+            builddir = os.path.basename(os.readlink('ctx'))
 
-    # Do the build.
-    build(args, extra)
+        # Configure if needed.
+        if needs_configure(builddir):
+            banner("Configuring: " + builddir)
+            configure(builddir, args.default)
+
+        # Do the build.
+        banner("Building: " + builddir)
+        build(builddir, args.verbose, args.jobs, extra)
+
+    # Run tests as requested.
+    # Note: after all builds so the output is easy to find.
+    for builddir in args.builddirs:
+        builddir = builddir.strip('/')
+        if builddir == 'ctx':
+            builddir = os.path.basename(os.readlink('ctx'))
+
+        if args.check_style:
+            banner("check-style: " + builddir)
+            check_style(builddir)
+
+        if args.jsapi_tests:
+            banner("jsapi-tests: " + builddir)
+            jsapi_tests(builddir)
+
+        if args.jit_tests:
+            banner("jit-test: " + builddir)
+            jit_tests(builddir)
+
+        if args.js_tests:
+            banner("js-test: " + builddir)
+            js_tests(builddir)
 
     return 0
 
