@@ -270,7 +270,10 @@ def needs_autoconf():
 
 
 def autoconf():
-    subprocess.call(['autoconf-2.13'])
+    try:
+        subprocess.call(['autoconf-2.13'])
+    except FileNotFoundError:
+        subprocess.call(['autoconf213'])
 
 
 def needs_configure(builddir):
