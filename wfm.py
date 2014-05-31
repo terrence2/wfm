@@ -40,6 +40,7 @@ class ConfigParser:
         'ggc': '+exact-rooting+gcgenerational',
         'noggc': '!gcgenerational',
         'fast': '?intl-api!ctypes',
+        'uni': '!unified-compilation'
     }
 
     Compilers = {
@@ -187,6 +188,9 @@ class ConfigParser:
         self.parse_flags(self.Optimizations[flag])
 
     def parse_toplevel(self, t):
+        if t[0] != ',':
+            raise ParseError('String must start with \',\'.')
+        t = t[1:]
         if len(t) < 3:
             raise ParseError('String requires at least a compiler, optimization, and arch flag.', t)
         compiler, architecture, optimization = t[0], t[1], t[2]
