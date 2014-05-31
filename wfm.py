@@ -188,8 +188,8 @@ class ConfigParser:
         self.parse_flags(self.Optimizations[flag])
 
     def parse_toplevel(self, t):
-        if t[0] != ',':
-            raise ParseError('String must start with \',\'.')
+        if t[0] != '_':
+            raise ParseError('String must start with \'_\'.')
         t = t[1:]
         if len(t) < 3:
             raise ParseError('String requires at least a compiler, optimization, and arch flag.', t)
