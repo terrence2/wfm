@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-Configure or build in the directory specified, or the one currently linked as ./ctx.
+Configure or build in the directory specified.
 
 -j# is specified by int(arg0)
-
-TODO:
-    Attempt to parallelize linking as well.
 """
 
 import argparse
@@ -29,7 +26,8 @@ except subprocess.CalledProcessError:
 
 class ConfigParser:
     MultiCharShortcuts = {
-        'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache',
+        #'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache',
+        'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc',
         'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
         'shell': '+readline+xterm-updates+posix-nspr-emulation',
         'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=' + CCachePath + ';',
@@ -39,14 +37,14 @@ class ConfigParser:
         'fuzz': '.dbg+more-deterministic+methodjit+type-inference+profiling',
         'ggc': '+exact-rooting+gcgenerational',
         'noggc': '!gcgenerational',
+        #'fast': '?intl-api!ctypes\'--with-compiler-wrapper=/usr/bin/distcc;',
         'fast': '?intl-api!ctypes',
-        'uni': '!unified-compilation'
     }
 
     Compilers = {
         'c': {
                 'name': 'Clang',
-                'flags': '^CC=clang;^CXX=clang++;^CCACHE_CC=clang;^CXXFLAGS=-fcolor-diagnostics;',
+                'flags': '^CC=clang;^CXX=clang++;^CXXFLAGS=-fcolor-diagnostics;',
                 'architectures': {
                     'd': '',
                     '4': '^AR=ar;^CC=-arch i386;^CXX=-arch i386;\'--target=i686-linux-gnu;',
@@ -82,9 +80,9 @@ class ConfigParser:
     FlagChars = set(('^', '+', '=', '!', '?', '\'', '.', '@')) # '*' is available
 
     def __init__(self, target):
+        self.target = target.strip().strip(os.path.sep)
         assert '/' not in target
         assert '\\' not in target
-        self.target = target
         self.have_parsed = False
         self.environment = {}
         self.arguments = []
@@ -234,6 +232,9 @@ class ConfigParser:
 
 
 def needs_autoconf():
+    """
+    Check if configure is out of date wrt configure.in.
+    """
     if not os.path.exists('configure'):
         print("No configure, rerunning autoconf.")
         return True
@@ -246,93 +247,93 @@ def needs_autoconf():
 
 
 def autoconf():
+    """
+    Run autoconf v2.13. Try a few variants, because everyone seems to name it differently.
+    """
     try:
         subprocess.call(['autoconf-2.13'])
     except FileNotFoundError:
         subprocess.call(['autoconf213'])
 
 
-def needs_configure(builddir):
-    confstatus = os.path.join(builddir, 'config.status')
+class Builder:
+    def __init__(self, builddir):
+        self.builddir = builddir.strip().strip(os.path.sep)
 
-    if not os.path.exists(confstatus):
-        print("no config.status")
-        return True
-
-    if os.path.getmtime(confstatus) < os.path.getmtime('configure'):
-        print("config.status is older than configure")
-        return True
-
-    return False
+    def banner(self, content):
+        print("+-------------------------------------------------------------------------------")
+        print("+-- {} {}+".format(content, '-' * (80 - 5 - len(content))))
+        print("+-------------------------------------------------------------------------------")
 
 
-def configure(builddir, is_default):
-    cfg = ConfigParser(builddir)
-    cfg.parse()
+class SpiderMonkeyBuilder(Builder):
+    def needs_configure(self):
+        confstatus = os.path.join(self.builddir, 'config.status')
 
-    # Make the directory if it doesn't exist.
-    pwd = os.getcwd()
-    confdir = os.path.realpath(os.path.join(pwd, builddir))
-    if not os.path.exists(confdir):
-        os.mkdir(confdir)
+        if not os.path.exists(confstatus):
+            print("no config.status")
+            return True
 
-    # If want to force this build to default, remove the ctx link so we will
-    # recreate it automatically.
-    if is_default and os.path.exists('ctx'):
-        os.unlink('ctx')
+        if os.path.getmtime(confstatus) < os.path.getmtime('configure'):
+            print("config.status is older than configure")
+            return True
 
-    # Create the context link, if there is not already one.
-    if not os.path.islink('ctx'):
-        os.symlink(confdir, 'ctx')
+        return False
 
+    def configure(self):
+        self.banner("Configuring: " + self.builddir)
 
-    # Run configure.
-    inherited = ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD')
-    env = {k: os.environ[k] for k in inherited if k in os.environ}
-    env.update(cfg.environment)
-    subprocess.check_call(['../configure'] + cfg.arguments, env=env, cwd=confdir)
+        cfg = ConfigParser(self.builddir)
+        cfg.parse()
 
+        # Make the directory if it doesn't exist.
+        pwd = os.getcwd()
+        confdir = os.path.realpath(os.path.join(pwd, self.builddir))
+        if not os.path.exists(confdir):
+            os.mkdir(confdir)
 
-def build(builddir, is_verbose, n_jobs, extra):
-    # Check for build-dir.
-    if not os.path.isdir(builddir):
-        raise Exception("No directory at builddir: {}".format(builddir))
+        # Run configure.
+        inherited = ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD')
+        env = {k: os.environ[k] for k in inherited if k in os.environ}
+        env.update(cfg.environment)
+        subprocess.check_call(['../configure'] + cfg.arguments, env=env, cwd=confdir)
 
-    # Get the process count.
-    extra += ['-j' + str(lib.get_jobcount(n_jobs))]
+    def build(self, is_verbose, n_jobs, extra):
+        self.banner("Building: " + self.builddir)
 
-    # Default to silent build.
-    if not is_verbose:
-        extra += ['-s']
+        # Check for build-dir.
+        if not os.path.isdir(self.builddir):
+            raise Exception("No directory at builddir: {}".format(self.builddir))
 
-    subprocess.check_call(['make'] + extra, cwd=builddir)
+        # Get the process count.
+        extra += ['-j' + str(lib.get_jobcount(n_jobs))]
 
+        # Default to silent build.
+        if not is_verbose:
+            extra += ['-s']
 
-def check_style(builddir):
-    subprocess.check_call(['make', 'check-style'], cwd=builddir)
+        subprocess.check_call(['make'] + extra, cwd=self.builddir)
 
+    def check_style(self):
+        self.banner("check-style: " + self.builddir)
+        subprocess.check_call(['make', 'check-style'], cwd=self.builddir)
 
-def jsapi_tests(builddir):
-    path = os.path.join(builddir, 'js', 'src', 'jsapi-tests', 'jsapi-tests')
-    subprocess.check_call([path])
+    def jsapi_tests(self):
+        self.banner("jsapi-tests: " + self.builddir)
+        path = os.path.join(self.builddir, 'js', 'src', 'jsapi-tests', 'jsapi-tests')
+        subprocess.check_call([path])
 
+    def jit_tests(self):
+        self.banner("jit-tests: " + self.builddir)
+        testsuite = os.path.join('jit-test', 'jit_test.py')
+        binary = os.path.join(self.builddir, 'js', 'src', 'js')
+        subprocess.check_call([testsuite, binary, '--tbpl'])
 
-def jit_tests(builddir):
-    testsuite = os.path.join('jit-test', 'jit_test.py')
-    binary = os.path.join(builddir, 'js', 'src', 'js')
-    subprocess.check_call([testsuite, binary, '--tbpl'])
-
-
-def js_tests(builddir):
-    testsuite = os.path.join('tests', 'jstests.py')
-    binary = os.path.join(builddir, 'js', 'src', 'js')
-    subprocess.check_call([testsuite, binary, '--tbpl'])
-
-
-def banner(content):
-    print("+-------------------------------------------------------------------------------")
-    print("+-- {} {}+".format(content, '-' * (80 - 5 - len(content))))
-    print("+-------------------------------------------------------------------------------")
+    def js_tests(self):
+        self.banner("js-tests: " + self.builddir)
+        testsuite = os.path.join('tests', 'jstests.py')
+        binary = os.path.join(self.builddir, 'js', 'src', 'js')
+        subprocess.check_call([testsuite, binary, '--tbpl'])
 
 
 def main():
@@ -342,10 +343,6 @@ def main():
                         help='The directory(s) to build.')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Show all build output.')
-    parser.add_argument('--default', '-d', action='store_true',
-                        help="Update ctx to this build.")
-    parser.add_argument('--show', '-s', action='store_true',
-                        help="Print the behavior of the current ctx.")
     parser.add_argument('--test', '-t', metavar='CONFIG',
                         help="Print the behavior of the given directory.")
     parser.add_argument('--jobs', '-j', metavar='count', default=0, type=int,
@@ -366,9 +363,7 @@ def main():
     if args.all_tests:
         args.check_style = args.jsapi_tests = args.jit_tests = args.js_tests = True
 
-    # Handle --show and --test.
-    if args.show:
-        args.test = os.path.basename(os.readlink('ctx'))
+    # Handle --test.
     if args.test:
         cfg = ConfigParser(args.test)
         cfg.show()
@@ -378,51 +373,35 @@ def main():
     if not os.path.isfile('configure.in'):
         print("No configure.in? You're not in the right place, you know.")
         return 0
+
     if not os.getcwd().endswith('/js/src'):
         print("You must run wfm in the js/src/ directory")
         return 0
+    BuilderClass = SpiderMonkeyBuilder
 
     # Autoconf if needed.
     if needs_autoconf():
         autoconf()
 
-    # Configure and build each directory in order.
-    for builddir in args.builddirs:
-        builddir = builddir.strip('/')
-        if builddir == 'ctx':
-            builddir = os.path.basename(os.readlink('ctx'))
+    # Generate builders.
+    builders = [BuilderClass(builddir) for builddir in args.builddirs]
 
+    # Configure and build each directory in order.
+    for builder in builders:
         # Configure if needed.
-        if needs_configure(builddir):
-            banner("Configuring: " + builddir)
-            configure(builddir, args.default)
+        if builder.needs_configure():
+            builder.configure()
 
         # Do the build.
-        banner("Building: " + builddir)
-        build(builddir, args.verbose, args.jobs, extra)
+        builder.build(args.verbose, args.jobs, extra)
 
     # Run tests as requested.
     # Note: after all builds so the output is easy to find.
-    for builddir in args.builddirs:
-        builddir = builddir.strip('/')
-        if builddir == 'ctx':
-            builddir = os.path.basename(os.readlink('ctx'))
-
-        if args.check_style:
-            banner("check-style: " + builddir)
-            check_style(builddir)
-
-        if args.jsapi_tests:
-            banner("jsapi-tests: " + builddir)
-            jsapi_tests(builddir)
-
-        if args.jit_tests:
-            banner("jit-test: " + builddir)
-            jit_tests(builddir)
-
-        if args.js_tests:
-            banner("js-test: " + builddir)
-            js_tests(builddir)
+    for builder in builders:
+        if args.jsapi_tests: builder.jsapi_tests()
+        if args.check_style: builder.check_style()
+        if args.jit_tests:   builder.jit_tests()
+        if args.js_tests:    builder.js_tests()
 
     return 0
 
