@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Configure or build in the directory specified.
 
@@ -7,6 +6,7 @@ Configure or build in the directory specified.
 
 import argparse
 import os.path
+import platform
 import subprocess
 import sys
 
@@ -21,8 +21,11 @@ class ParseError(Exception):
 # Find ccache.
 try:
     CCachePath = subprocess.check_output(['which', 'ccache']).decode('UTF-8').strip()
+except FileNotFoundError:
+    # This is windows, where we're not using the path.
+    CCachePath = ''
 except subprocess.CalledProcessError:
-    raise # We'll probably need to hardcode for windows.
+    raise
 
 class ConfigParser:
     MultiCharShortcuts = {
@@ -69,6 +72,11 @@ class ConfigParser:
                     'd': '',
                 }
              },
+        'v': {
+            'name': 'MicrosoftVisualC++',
+            'flags': '',
+            'architectures': {'d': ''}
+        }
     }
 
     Optimizations = {
@@ -254,16 +262,20 @@ def autoconf():
         subprocess.call(['autoconf-2.13'])
     except FileNotFoundError:
         subprocess.call(['autoconf213'])
+    except OSError:
+        sh = "c:\\mozilla-build\\msys\\bin\\bash.exe"
+        subprocess.call([sh, 'autoconf-2.13'])
 
 
 class Builder:
     def __init__(self, builddir):
-        self.builddir = builddir.strip().strip(os.path.sep)
+        self.builddir = builddir.strip().strip(os.path.sep).strip('/')
 
     def banner(self, content):
         print("+-------------------------------------------------------------------------------")
         print("+-- {} {}+".format(content, '-' * (80 - 5 - len(content))))
         print("+-------------------------------------------------------------------------------")
+        sys.stdout.flush()
 
 
 class SpiderMonkeyBuilder(Builder):
@@ -292,11 +304,23 @@ class SpiderMonkeyBuilder(Builder):
         if not os.path.exists(confdir):
             os.mkdir(confdir)
 
-        # Run configure.
+        # Get a sane environment
         inherited = ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD')
         env = {k: os.environ[k] for k in inherited if k in os.environ}
         env.update(cfg.environment)
-        subprocess.check_call(['../configure'] + cfg.arguments, env=env, cwd=confdir)
+
+        configure = [os.path.realpath('configure')]
+        shell = False
+        if platform.system() == 'Windows':
+            sh = "c:\\mozilla-build\\msys\\bin\\bash.exe"
+            configure = [sh] + configure
+            shell = True
+
+            # Also, a ton more stuff is needed, so just dump the env filtering.
+            env = os.environ
+
+        subprocess.check_call(configure + cfg.arguments, env=env, cwd=confdir,
+                              shell=shell)
 
     def build(self, is_verbose, n_jobs, extra):
         self.banner("Building: " + self.builddir)
@@ -312,7 +336,11 @@ class SpiderMonkeyBuilder(Builder):
         if not is_verbose:
             extra += ['-s']
 
-        subprocess.check_call(['make'] + extra, cwd=self.builddir)
+        make = 'make'
+        if platform.system() == 'Windows':
+            make = 'mozmake.exe'
+
+        subprocess.check_call([make] + extra, cwd=self.builddir)
 
     def check_style(self):
         self.banner("check-style: " + self.builddir)
@@ -374,7 +402,7 @@ def main():
         print("No configure.in? You're not in the right place, you know.")
         return 0
 
-    if not os.getcwd().endswith('/js/src'):
+    if not os.getcwd().endswith(os.path.join('js', 'src')):
         print("You must run wfm in the js/src/ directory")
         return 0
     BuilderClass = SpiderMonkeyBuilder
