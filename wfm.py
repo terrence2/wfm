@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Configure or build in the directory specified.
 
