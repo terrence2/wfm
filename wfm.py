@@ -31,18 +31,21 @@ except subprocess.CalledProcessError:
 class ConfigParser:
     MultiCharShortcuts = {
         #'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache',
-        'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc',
+        #'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc',
+        'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc+ctypes',
         'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
-        'shell': '+readline+xterm-updates+posix-nspr-emulation',
+        'shell': '+readline+xterm-updates',
         'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=' + CCachePath + ';',
         'dbg': '+debug-symbols+valgrind+gczeal',
         'def': '.dbg.shell', # .dbg.shell
         'perf': '+strip', # forces stripping
         'fuzz': '.dbg+more-deterministic+methodjit+type-inference+profiling',
-        'ggc': '+exact-rooting+gcgenerational',
-        'noggc': '!gcgenerational',
-        #'fast': '?intl-api!ctypes\'--with-compiler-wrapper=/usr/bin/distcc;',
-        'fast': '?intl-api!ctypes',
+        'sysnspr': '=system-nspr',
+        #'fast': '?intl-api!ctypes\'--with-compiler-wrapper=distcc;',
+        'noext': '?intl-api!ctypes',
+        'nointl': '?intl-api',
+        'fast': "=system-icu=system-nspr'--with-compiler-wrapper=distcc;",
+        'distcc': "'--with-compiler-wrapper=distcc;",
     }
 
     Compilers = {
@@ -306,7 +309,7 @@ class SpiderMonkeyBuilder(Builder):
             os.mkdir(confdir)
 
         # Get a sane environment
-        inherited = ('PATH', 'SHELL', 'TERM', 'COLORTERM', 'MOZILLABUILD')
+        inherited = ('PATH', 'SHELL', 'HOME', 'TERM', 'COLORTERM', 'MOZILLABUILD')
         env = {k: os.environ[k] for k in inherited if k in os.environ}
         env.update(cfg.environment)
 
@@ -341,22 +344,28 @@ class SpiderMonkeyBuilder(Builder):
         if platform.system() == 'Windows':
             make = 'mozmake.exe'
 
-        subprocess.check_call([make] + extra, cwd=self.builddir)
+        # Get a sane environment
+        inherited = ('PATH', 'SHELL', 'HOME', 'TERM', 'COLORTERM', 'MOZILLABUILD')
+        env = {k: os.environ[k] for k in inherited if k in os.environ}
+        env = os.environ.copy()
+
+        subprocess.check_call([make] + extra, cwd=self.builddir, env=env)
 
     def check_style(self):
         self.banner("check-style: " + self.builddir)
         subprocess.check_call(['make', 'check-style'], cwd=self.builddir)
 
-    def jsapi_tests(self):
+    def jsapi_tests(self, debugger: bool, filter: str):
         self.banner("jsapi-tests: " + self.builddir)
         path = os.path.join(self.builddir, 'js', 'src', 'jsapi-tests', 'jsapi-tests')
-        subprocess.check_call([path])
+        args = [path, filter] if not debugger else ['gdb', '--args', path, filter]
+        subprocess.check_call(args)
 
-    def jit_tests(self):
+    def jit_tests(self, filter: str):
         self.banner("jit-tests: " + self.builddir)
         testsuite = os.path.join('jit-test', 'jit_test.py')
         binary = os.path.join(self.builddir, 'js', 'src', 'js')
-        subprocess.check_call([testsuite, binary, '--tbpl'])
+        subprocess.check_call([testsuite, binary, '--tbpl', filter])
 
     def js_tests(self):
         self.banner("js-tests: " + self.builddir)
@@ -386,6 +395,10 @@ def main():
                         help='Run the js-tests suite.')
     parser.add_argument('--all-tests', '-A', default=False, type=bool,
                         help='Run all tests.')
+    parser.add_argument('--filter', '-f', default='', type=str,
+                        help='Filter tests.')
+    parser.add_argument('--debugger', '-g', action='store_true',
+                        help='Run in a debugger.')
     args, extra = parser.parse_known_args()
 
     # Propogate all_tests to individual test routines.
@@ -427,9 +440,9 @@ def main():
     # Run tests as requested.
     # Note: after all builds so the output is easy to find.
     for builder in builders:
-        if args.jsapi_tests: builder.jsapi_tests()
+        if args.jsapi_tests: builder.jsapi_tests(args.debugger, args.filter)
         if args.check_style: builder.check_style()
-        if args.jit_tests:   builder.jit_tests()
+        if args.jit_tests:   builder.jit_tests(args.filter)
         if args.js_tests:    builder.js_tests()
 
     return 0
