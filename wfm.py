@@ -26,32 +26,42 @@ except FileNotFoundError:
     # This is windows, where we're not using the path.
     CCachePath = ''
 except subprocess.CalledProcessError:
-    raise
+    CCachePath = ''
 
 class ConfigParser:
     MultiCharShortcuts = {
-        #'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache',
-        #'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc',
-        'tbpl': '+signmar+stdcxx-compat!shared-js+trace-malloc+ctypes',
-        'tbpl4': '+signmar+stdcxx-compat!shared-js+trace-malloc.ccache\'--with-nspr-prefix=/usr/i686-linux-gnu;\'--with-nspr-exec-prefix=/usr/i686-linux-gnu;',
-        'shell': '+readline+xterm-updates',
-        'ccache': '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=' + CCachePath + ';',
+        'nightly': "!warnings-as-errors+elf-hack+release+update-packaging+js-shell'--enable-update-channel=;'--with-google-api-keyfile=/builds/gapi.data;",
+        'tbpl': "+signmar+stdcxx-compat!shared-js+trace-malloc",
+        'tsan_pie': "+thread-sanitizer!jemalloc!crashreporter!elf-hack+debug-symbols!install-strip^MOZ_DEBUG_SYMBOLS=1;^CFLAGS=-fsanitize=thread -fPIC -pie;^CXXFLAGS=-fsanitize=thread -fPIC -pie;^LDFLAGS=-fsanitize=thread -fPIC -pie;",
+        'tsan': "+thread-sanitizer!jemalloc!crashreporter!elf-hack+debug-symbols!install-strip^MOZ_DEBUG_SYMBOLS=1;^CFLAGS=-fsanitize=thread;^CXXFLAGS=-fsanitize=thread;^LDFLAGS=-fsanitize=thread;",
+        'rust': "+rust",
+        'shell': '+readline',
         'dbg': '+debug-symbols+valgrind+gczeal',
         'def': '.dbg.shell', # .dbg.shell
         'perf': '+strip', # forces stripping
         'fuzz': '.dbg+more-deterministic+methodjit+type-inference+profiling',
+        # Use system installed libraries.
+        'sysicu': '=system-icu',
         'sysnspr': '=system-nspr',
-        #'fast': '?intl-api!ctypes\'--with-compiler-wrapper=distcc;',
-        'noext': '?intl-api!ctypes',
-        'nointl': '?intl-api',
-        'fast': "=system-icu=system-nspr'--with-compiler-wrapper=distcc;",
+        'syslibs': ".sysicu.sysnspr",
+        # Enable optional libraries.
+        'crashreporter': "+crashreporter",
+        'prof': "+profiling",
+        # Disable optional libraries.
+        'noicu': "?intl-api",
+        'noctypes': "!ctypes",
+        'nogstreamer': "!gstreamer",
+        'noext': ".noicu.noctypes",
+        # Compiler wrappers.
         'distcc': "'--with-compiler-wrapper=distcc;",
     }
+    if CCachePath:
+        MultiCharShortcuts['ccache'] = '^CCACHE_CPP2=1;^CCACHE_UNIFY=1;\'--with-ccache=' + CCachePath + ';'
 
     Compilers = {
         'c': {
                 'name': 'Clang',
-                'flags': '^CC=clang;^CXX=clang++;^CXXFLAGS=-fcolor-diagnostics;',
+                'flags': '^CC=/home/terrence/moz/clang/build-opt/bin/clang;^CXX=/home/terrence/moz/clang/build-opt/bin/clang++;^CXXFLAGS=-fcolor-diagnostics;',
                 'architectures': {
                     'd': '',
                     '4': '^AR=ar;^CC=-arch i386;^CXX=-arch i386;\'--target=i686-linux-gnu;',
@@ -59,7 +69,7 @@ class ConfigParser:
              },
         'g': {
                 'name': 'GCC',
-                'flags': '^CC=gcc;^CXX=g++;',
+                'flags': '^CC=gcc;^CXX=g++;^CXXFLAGS=-fdiagnostics-color -Wunused;',
                 'architectures': {
                     'd': '',
                     '4': '^AR=ar;^CC=-m32;^CXX=-m32;\'--target=i686-linux-gnu;',
@@ -87,6 +97,8 @@ class ConfigParser:
         'o': '+optimize!debug',
         'd': '!optimize+debug',
         'D': '+optimize+debug',
+        'T': "!debug'--enable-optimize=-O2 -gline-tables-only;",
+        't': "!debug'--enable-optimize=-O2 -g;",
     }
 
     FlagChars = set(('^', '+', '=', '!', '?', '\'', '.', '@')) # '*' is available
@@ -374,6 +386,35 @@ class SpiderMonkeyBuilder(Builder):
         subprocess.check_call([testsuite, binary, '--tbpl'])
 
 
+class MozConfigBuilder(Builder):
+    def needs_configure(self):
+        """We just want to spit out a MOZCONFIG for build, no configuration needed."""
+        return False
+
+    def build(self, is_verbose, n_jobs, extra):
+        self.banner("Building: " + self.builddir)
+
+        # Parse the configuration.
+        cfg = ConfigParser(self.builddir)
+        cfg.parse()
+
+        # Make the directory if it doesn't exist.
+        pwd = os.getcwd()
+        confdir = os.path.realpath(os.path.join(pwd, self.builddir))
+        if not os.path.exists(confdir):
+            os.mkdir(confdir)
+
+        # Write a mozconfig.
+        with open(os.path.join(confdir, "moz.config"), "w") as mozconfig:
+            for key, value in cfg.environment.items():
+                mozconfig.write("export {}=\"{}\"\n".format(key, value))
+            for arg in cfg.arguments:
+                mozconfig.write("ac_add_options {}\n".format(arg))
+            mozconfig.write("mk_add_options AUTOCLOBBER=1\n");
+            mozconfig.write("mk_add_options MOZ_MAKE_FLAGS=\"-j{}\"\n".format(lib.get_jobcount(n_jobs)));
+            mozconfig.write("mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/{}\n".format(self.builddir))
+
+
 def main():
     # Process args.
     parser = argparse.ArgumentParser(description='Make a shell.')
@@ -417,9 +458,11 @@ def main():
         return 0
 
     if not os.getcwd().endswith(os.path.join('js', 'src')):
-        print("You must run wfm in the js/src/ directory")
-        return 0
-    BuilderClass = SpiderMonkeyBuilder
+        print("Using MOZCONFIG builder")
+        BuilderClass = MozConfigBuilder
+    else:
+        print("Using SpiderMonkey builder")
+        BuilderClass = SpiderMonkeyBuilder
 
     # Autoconf if needed.
     if needs_autoconf():
