@@ -30,7 +30,7 @@ except subprocess.CalledProcessError:
 
 class ConfigParser:
     MultiCharShortcuts = {
-        'nightly': "!warnings-as-errors+elf-hack+release+update-packaging+js-shell'--enable-update-channel=;'--with-google-api-keyfile=/builds/gapi.data;",
+        'nightly': "!warnings-as-errors+elf-hack+release+js-shell'--enable-update-channel=;'--with-google-api-keyfile=/builds/gapi.data;",
         'tbpl': "+signmar+stdcxx-compat!shared-js+trace-malloc",
         'tsan_pie': "+thread-sanitizer!jemalloc!crashreporter!elf-hack+debug-symbols!install-strip^MOZ_DEBUG_SYMBOLS=1;^CFLAGS=-fsanitize=thread -fPIC -pie;^CXXFLAGS=-fsanitize=thread -fPIC -pie;^LDFLAGS=-fsanitize=thread -fPIC -pie;",
         'tsan': "+thread-sanitizer!jemalloc!crashreporter!elf-hack+debug-symbols!install-strip^MOZ_DEBUG_SYMBOLS=1;^CFLAGS=-fsanitize=thread;^CXXFLAGS=-fsanitize=thread;^LDFLAGS=-fsanitize=thread;",
@@ -61,7 +61,7 @@ class ConfigParser:
     Compilers = {
         'c': {
                 'name': 'Clang',
-                'flags': '^CC=/home/terrence/moz/clang/build-opt/bin/clang;^CXX=/home/terrence/moz/clang/build-opt/bin/clang++;^CXXFLAGS=-fcolor-diagnostics;',
+                'flags': '^CC=clang;^CXX=clang++;^CXXFLAGS=-fcolor-diagnostics;',
                 'architectures': {
                     'd': '',
                     '4': '^AR=ar;^CC=-arch i386;^CXX=-arch i386;\'--target=i686-linux-gnu;',
@@ -369,20 +369,20 @@ class SpiderMonkeyBuilder(Builder):
 
     def jsapi_tests(self, debugger: bool, filter: str):
         self.banner("jsapi-tests: " + self.builddir)
-        path = os.path.join(self.builddir, 'js', 'src', 'jsapi-tests', 'jsapi-tests')
+        path = os.path.join(self.builddir, 'dist', 'bin', 'jsapi-tests')
         args = [path, filter] if not debugger else ['gdb', '--args', path, filter]
         subprocess.check_call(args)
 
     def jit_tests(self, filter: str):
         self.banner("jit-tests: " + self.builddir)
         testsuite = os.path.join('jit-test', 'jit_test.py')
-        binary = os.path.join(self.builddir, 'js', 'src', 'js')
+        binary = os.path.join(self.builddir, 'dist', 'bin', 'js')
         subprocess.check_call([testsuite, binary, '--tbpl', filter])
 
     def js_tests(self):
         self.banner("js-tests: " + self.builddir)
         testsuite = os.path.join('tests', 'jstests.py')
-        binary = os.path.join(self.builddir, 'js', 'src', 'js')
+        binary = os.path.join(self.builddir, 'dist', 'bin', 'js')
         subprocess.check_call([testsuite, binary, '--tbpl'])
 
 
