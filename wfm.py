@@ -338,6 +338,11 @@ class SpiderMonkeyBuilder(Builder):
         subprocess.check_call(configure + cfg.arguments, env=env, cwd=confdir,
                               shell=shell)
 
+    def which_make(self):
+        if platform.system() == 'Windows':
+            return 'mozmake.exe'
+        return 'make'
+
     def build(self, is_verbose, n_jobs, extra):
         self.banner("Building: " + self.builddir)
 
@@ -352,20 +357,16 @@ class SpiderMonkeyBuilder(Builder):
         if not is_verbose:
             extra += ['-s']
 
-        make = 'make'
-        if platform.system() == 'Windows':
-            make = 'mozmake.exe'
-
         # Get a sane environment
         inherited = ('PATH', 'SHELL', 'HOME', 'TERM', 'COLORTERM', 'MOZILLABUILD')
         env = {k: os.environ[k] for k in inherited if k in os.environ}
         env = os.environ.copy()
 
-        subprocess.check_call([make] + extra, cwd=self.builddir, env=env)
+        subprocess.check_call([self.which_make()] + extra, cwd=self.builddir, env=env)
 
     def check_style(self):
         self.banner("check-style: " + self.builddir)
-        subprocess.check_call(['make', 'check-style'], cwd=self.builddir)
+        subprocess.check_call([self.which_make(), 'check-style'], cwd=self.builddir)
 
     def jsapi_tests(self, debugger: bool, filter: str):
         self.banner("jsapi-tests: " + self.builddir)
@@ -376,8 +377,11 @@ class SpiderMonkeyBuilder(Builder):
     def jit_tests(self, filter: str):
         self.banner("jit-tests: " + self.builddir)
         testsuite = os.path.join('jit-test', 'jit_test.py')
-        binary = os.path.join(self.builddir, 'dist', 'bin', 'js')
-        subprocess.check_call([testsuite, binary, '--tbpl', filter])
+        binary = os.path.join(self.builddir, 'js', 'src', 'js')
+        if platform.system() == 'Windows':
+            binary += '.exe'
+        command = [testsuite, binary, '--tbpl', filter]
+        subprocess.check_call(command, shell=True, env=os.environ)
 
     def js_tests(self):
         self.banner("js-tests: " + self.builddir)
