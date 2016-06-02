@@ -385,6 +385,17 @@ class SpiderMonkeyBuilder(Builder):
         binary = os.path.join(self.builddir, 'dist', 'bin', 'js')
         subprocess.check_call([testsuite, binary, '--tbpl'])
 
+    def mfbt_tests(self, filter: str):
+        self.banner("mfbt-tests: " + self.builddir)
+        bindir = os.path.join(self.builddir, 'dist/bin/')
+        for filename in os.listdir(bindir):
+            if filename.startswith('Test'):
+                if filter and filter not in filename:
+                    continue
+                print("Running: {}".format(filename))
+                binary = os.path.join(bindir, filename)
+                subprocess.check_call([binary])
+
 
 class MozConfigBuilder(Builder):
     def needs_configure(self):
@@ -434,6 +445,8 @@ def main():
                         help='Run the jit-tests suite.')
     parser.add_argument('--js-tests', '-T', action='store_true',
                         help='Run the js-tests suite.')
+    parser.add_argument('--mfbt-tests', '-M', action='store_true',
+                        help='Run the mfbt testsuite.')
     parser.add_argument('--all-tests', '-A', default=False, type=bool,
                         help='Run all tests.')
     parser.add_argument('--filter', '-f', default='', type=str,
@@ -487,6 +500,7 @@ def main():
         if args.check_style: builder.check_style()
         if args.jit_tests:   builder.jit_tests(args.filter)
         if args.js_tests:    builder.js_tests()
+        if args.mfbt_tests:  builder.mfbt_tests(args.filter)
 
     return 0
 
